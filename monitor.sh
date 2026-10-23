@@ -13,8 +13,10 @@ CHECK_TIMEOUT="${CHECK_TIMEOUT:-5}"
 RETRY_DELAY="${RETRY_DELAY:-10}"
 MAILGUN_REGION="${MAILGUN_REGION:-US}"
 STATE_FILE="/data/status"
+LOG_DIR="${LOG_DIR:-/logs}"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-30}"
 
-for value in "$CHECK_INTERVAL" "$CHECK_TIMEOUT" "$RETRY_DELAY" "$MYSQL_PORT"; do
+for value in "$CHECK_INTERVAL" "$CHECK_TIMEOUT" "$RETRY_DELAY" "$MYSQL_PORT" "$LOG_RETENTION_DAYS"; do
   case "$value" in
     ''|*[!0-9]*)
       echo "Invalid numeric configuration: $value" >&2
@@ -23,8 +25,8 @@ for value in "$CHECK_INTERVAL" "$CHECK_TIMEOUT" "$RETRY_DELAY" "$MYSQL_PORT"; do
   esac
 done
 
-if [ "$CHECK_INTERVAL" -eq 0 ] || [ "$CHECK_TIMEOUT" -eq 0 ]; then
-  echo 'CHECK_INTERVAL and CHECK_TIMEOUT must be greater than zero.' >&2
+if [ "$CHECK_INTERVAL" -eq 0 ] || [ "$CHECK_TIMEOUT" -eq 0 ] || [ "$LOG_RETENTION_DAYS" -eq 0 ]; then
+  echo 'CHECK_INTERVAL, CHECK_TIMEOUT, and LOG_RETENTION_DAYS must be greater than zero.' >&2
   exit 1
 fi
 
@@ -37,8 +39,24 @@ case "$MAILGUN_REGION" in
     ;;
 esac
 
+mkdir -p "$LOG_DIR"
+LAST_LOG_DATE=''
+
+cleanup_logs() {
+  find "$LOG_DIR" -type f -name 'monitor-*.log' \
+    -mtime "+$LOG_RETENTION_DAYS" -exec rm -f '{}' ';'
+}
+
 log() {
-  printf '[%s] %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$*"
+  current_log_date="$(date -u '+%Y-%m-%d')"
+
+  if [ "$current_log_date" != "$LAST_LOG_DATE" ]; then
+    cleanup_logs
+    LAST_LOG_DATE="$current_log_date"
+  fi
+
+  printf '[%s] %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$*" \
+    | tee -a "${LOG_DIR}/monitor-${current_log_date}.log"
 }
 
 read_state() {
