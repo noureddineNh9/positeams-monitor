@@ -1,0 +1,19 @@
+services:
+  mysql-monitor:
+    build: .
+    container_name: mysql-monitor
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    volumes:
+      - monitor_state:/data
+
+volumes:
+  monitor_state:
