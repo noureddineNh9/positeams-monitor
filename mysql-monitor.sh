@@ -96,11 +96,15 @@ log "Started monitoring ${MYSQL_HOST}:${MYSQL_PORT} every ${CHECK_INTERVAL}s"
 
 while true; do
   healthy=false
+  previous_state="$(read_state)"
 
   if check_connection; then
     healthy=true
   else
-    log "TCP check failed; retrying in ${RETRY_DELAY}s"
+    if [ "$previous_state" != down ]; then
+      log "TCP check failed; retrying in ${RETRY_DELAY}s"
+    fi
+
     sleep "$RETRY_DELAY"
 
     if check_connection; then
@@ -108,12 +112,10 @@ while true; do
     fi
   fi
 
-  previous_state="$(read_state)"
-
   if [ "$healthy" = true ]; then
-    log "MySQL TCP connection: OK"
-
     if [ "$previous_state" = down ]; then
+      log "MySQL TCP connection: RECOVERED (${MYSQL_HOST}:${MYSQL_PORT})"
+
       message="MySQL TCP connection recovered.
       Host: ${MYSQL_HOST}
       Port: ${MYSQL_PORT}
@@ -121,7 +123,6 @@ while true; do
 
       if send_email "[RECOVERED] MySQL connection restored" "$message"; then
         save_state up
-        log 'Recovery email accepted by Mailgun'
       else
         log 'ERROR: Recovery email failed; will retry at next check'
       fi
@@ -131,9 +132,9 @@ while true; do
     fi
 
   else
-    log "MySQL TCP connection: FAILED (${MYSQL_HOST}:${MYSQL_PORT})"
-
     if [ "$previous_state" != down ]; then
+      log "MySQL TCP connection: FAILED (${MYSQL_HOST}:${MYSQL_PORT})"
+
       message="MySQL TCP connection failed twice.
       Host: ${MYSQL_HOST}
       Port: ${MYSQL_PORT}
@@ -143,7 +144,6 @@ while true; do
 
       if send_email "[ALERT] MySQL connection failed" "$message"; then
         save_state down
-        log 'Failure email accepted by Mailgun'
       else
         log 'ERROR: Failure email failed; will retry at next check'
       fi
